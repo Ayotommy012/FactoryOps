@@ -1,0 +1,27 @@
+services:
+  factoryops-db:
+    image: postgres:17
+    container_name: factoryops-db
+    restart: unless-stopped
+    ports:
+      # Expose only on loopback interface to prevent public exposure
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-factoryops}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD}
+      APP_DB_USER: ${POSTGRES_USER:-factoryops_app}
+      APP_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - factoryops_pgdata:/var/lib/postgresql/data
+      - ./docker/init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-factoryops_app} -d ${POSTGRES_DB:-factoryops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  factoryops_pgdata:
+    name: factoryops_pgdata

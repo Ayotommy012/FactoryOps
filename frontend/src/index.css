@@ -1,0 +1,465 @@
+/* FactoryOps Industrial SCADA & Digital Twin Operator Console Theme */
+/* Restrained Black & Terminal Green Aesthetic */
+
+:root {
+  /* Near-Black & Dark Charcoal Surfaces */
+  --bg-dark: #0A0D0A;
+  --bg-canvas: #0F140F;
+  --bg-card: #141A14;
+  --bg-card-subtle: #192219;
+  --bg-card-hover: #202B20;
+  --border-color: #243524;
+  --border-subtle: #1A261A;
+  --border-focus: #22C55E;
+
+  /* Crisp Light Off-White & Monospace Typography */
+  --text-main: #F1F5F1;
+  --text-secondary: #CBD5CB;
+  --text-muted: #8E9E8E;
+  --text-dim: #556655;
+
+  /* Terminal Green Primary Accents */
+  --accent-green: #22C55E;
+  --accent-green-bright: #4ADE80;
+  --accent-green-dark: #15803D;
+  --accent-cocoa: #1E2E1E;
+  --accent-cocoa-light: #2D422D;
+  --accent-orange: #F59E0B;
+  --accent-amber: #F59E0B;
+  --accent-sage: #86EFAC;
+  --accent-steel: #64748B;
+  --accent-crimson: #EF4444;
+
+  /* Operational SCADA Status Palettes */
+  --status-nominal: #22C55E;
+  --status-nominal-bg: rgba(34, 197, 94, 0.12);
+  --status-nominal-border: rgba(34, 197, 94, 0.4);
+
+  --status-warning: #F59E0B;
+  --status-warning-bg: rgba(245, 158, 11, 0.12);
+  --status-warning-border: rgba(245, 158, 11, 0.4);
+
+  --status-danger: #EF4444;
+  --status-danger-bg: rgba(239, 68, 68, 0.16);
+  --status-danger-border: rgba(239, 68, 68, 0.4);
+
+  --status-info: #06B6D4;
+  --status-info-bg: rgba(6, 182, 212, 0.12);
+  --status-info-border: rgba(6, 182, 212, 0.4);
+
+  --status-pending: #64748B;
+  --status-pending-bg: rgba(100, 116, 139, 0.12);
+  --status-pending-border: rgba(100, 116, 139, 0.35);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, "SF Mono", monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  background-color: var(--bg-dark);
+  color: var(--text-main);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-dark);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-green-dark);
+}
+
+/* Technical Data Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-size: 0.70rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: var(--font-mono);
+  border: 1px solid transparent;
+}
+.badge-nominal, .badge-running, .badge-online, .badge-healthy, .badge-approved {
+  background: var(--status-nominal-bg);
+  color: #86EFAC;
+  border-color: var(--status-nominal-border);
+}
+.badge-completed {
+  background: rgba(21, 128, 61, 0.25);
+  color: #4ADE80;
+  border-color: rgba(34, 197, 94, 0.4);
+}
+.badge-warning, .badge-degraded, .badge-diverted, .badge-in_progress, .badge-delayed, .badge-at_risk {
+  background: var(--status-warning-bg);
+  color: #FCD34D;
+  border-color: var(--status-warning-border);
+}
+.badge-danger, .badge-failed, .badge-offline, .badge-rejected, .badge-breached, .badge-blocked {
+  background: var(--status-danger-bg);
+  color: #FCA5A5;
+  border-color: var(--status-danger-border);
+}
+.badge-info, .badge-recovering {
+  background: var(--status-info-bg);
+  color: #67E8F9;
+  border-color: var(--status-info-border);
+}
+.badge-neutral, .badge-scheduled, .badge-open, .badge-pending, .badge-idle, .badge-queued {
+  background: var(--status-pending-bg);
+  color: #94A3B8;
+  border-color: var(--status-pending-border);
+}
+
+/* Technical Panels */
+.panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.panel-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Metric Gauges */
+.metric-box {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: 2px;
+  padding: 10px 14px;
+}
+.metric-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-bottom: 3px;
+}
+.metric-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+.metric-unit {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+/* Technical Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 2px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card-subtle);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-green);
+}
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-primary {
+  background: var(--accent-green-dark);
+  border-color: var(--accent-green);
+  color: #F0FDF4;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #16A34A;
+  border-color: var(--accent-green-bright);
+}
+.btn-orange, .btn-warning {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: var(--accent-amber);
+  color: #FDE68A;
+  font-weight: 700;
+}
+.btn-orange:hover:not(:disabled), .btn-warning:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.28);
+}
+.btn-danger {
+  background: var(--status-danger-bg);
+  border-color: var(--status-danger-border);
+  color: #FCA5A5;
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.35);
+}
+.btn-secondary {
+  background: var(--bg-card-subtle);
+  border-color: var(--border-color);
+  color: var(--text-main);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: var(--bg-card-hover);
+  border-color: var(--accent-green);
+}
+.btn-close {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+}
+.btn-close:hover {
+  color: var(--text-main);
+  background: var(--bg-card-hover);
+}
+
+/* Inputs & Form Controls */
+.input-text, .select-input {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  border-radius: 2px;
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+.input-text:focus, .select-input:focus {
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 1px var(--accent-green);
+}
+
+/* Tabular Data Grid */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+}
+table.scada-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+}
+table.scada-table th {
+  background: var(--bg-canvas);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+}
+table.scada-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-main);
+}
+table.scada-table tr:hover td {
+  background: var(--bg-card-hover);
+}
+
+/* 7-Stage Process Line Layout */
+.process-line-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+}
+@media (max-width: 1200px) {
+  .process-line-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+@media (max-width: 768px) {
+  .process-line-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+@media (max-width: 480px) {
+  .process-line-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stage-card {
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+.stage-card:hover {
+  border-color: var(--accent-green);
+  background: var(--bg-card-subtle);
+}
+.stage-card.selected {
+  border-color: var(--accent-green-bright);
+  box-shadow: 0 0 0 1px var(--accent-green);
+  background: var(--bg-card-subtle);
+}
+.stage-card-num {
+  font-size: 0.65rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+.stage-card-name {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+.stage-card-machine {
+  font-size: 0.72rem;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+/* Trajectory Chart Table */
+.trajectory-bar {
+  height: 6px;
+  border-radius: 1px;
+  background: var(--accent-green-dark);
+  transition: width 0.3s ease;
+}
+.trajectory-bar.stockout {
+  background: var(--accent-crimson);
+}
+.trajectory-bar.replenishment {
+  background: var(--accent-green);
+}
+
+/* Centered Modal Overlay System */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(3, 5, 3, 0.85);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.modal-box {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  max-width: 780px;
+  width: 100%;
+  max-height: 90vh;
+  animation: modal-appear 0.18s ease-out;
+}
+
+@keyframes modal-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-canvas);
+}
+
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
+}

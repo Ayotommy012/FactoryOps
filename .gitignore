@@ -1,0 +1,118 @@
+# ────────────────────────────────────────────────────────────────────────────
+# Environment & Secrets
+# ────────────────────────────────────────────────────────────────────────────
+# Ignore all .env variants (secrets) …
+.env
+.env.*
+# … but always allow the sanitised example to be tracked.
+# The negation MUST follow the wildcard it overrides.
+!.env.example
+
+# ────────────────────────────────────────────────────────────────────────────
+# Python
+# ────────────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.manifest
+*.spec
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+.virtualenv/
+.python-version
+
+# pip
+pip-log.txt
+pip-delete-this-directory.txt
+
+# uv
+.uv/
+uv.lock
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# pyright / pylance
+pyrightconfig.json
+
+# ruff / black / isort
+.ruff_cache/
+
+# coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+nosetests.xml
+
+# pytest
+.pytest_cache/
+.cache/
+
+# ────────────────────────────────────────────────────────────────────────────
+# JDBC driver jars  (binary artefacts — distribute separately)
+# ────────────────────────────────────────────────────────────────────────────
+jdbc/*.jar
+!jdbc/.gitkeep
+
+# ────────────────────────────────────────────────────────────────────────────
+# IDEs & editors
+# ────────────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.iml
+*.iws
+*.ipr
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ────────────────────────────────────────────────────────────────────────────
+# Logs & temporary files
+# ────────────────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.tmp
+*.bak
+*.orig
+
+# ────────────────────────────────────────────────────────────────────────────
+# Frontend build artefacts & node_modules
+# ────────────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+app/static/dist/
+
+# ────────────────────────────────────────────────────────────────────────────
+# OS artefacts
+# ────────────────────────────────────────────────────────────────────────────
+desktop.ini
+.Spotlight-V100
+.Trashes
+ehthumbs.db

@@ -1,0 +1,13 @@
+# NASA / University of Cincinnati IMS Bearing Dataset (Benchmark Run-to-Failure Test)
+# Source: NASA Ames Prognostics Data Repository
+# Experiment: Bearing 1, Accelerometer Channel 1 & 2, Shaft Speed 2000 RPM, Radial Load 6000 lbs
+# Usage Terms: Public Domain / Open Research Benchmark
+# Unit: Acceleration (g-force) & Derived Velocity RMS (mm/s)
+timestamp,bearing_id,accelerometer_ch1_g,accelerometer_ch2_g,calculated_vibration_rms_mms,temperature_c,operational_status,provenance_source
+2004-02-12T10:32:39Z,bearing_1,0.062,0.058,1.24,102.4,nominal,nasa:ims_bearing_dataset:b1_run1
+2004-02-12T10:42:39Z,bearing_1,0.065,0.061,1.31,104.1,nominal,nasa:ims_bearing_dataset:b1_run1
+2004-02-12T10:52:39Z,bearing_1,0.068,0.064,1.38,105.0,nominal,nasa:ims_bearing_dataset:b1_run1
+2004-02-15T12:00:00Z,bearing_1,0.089,0.082,1.82,114.5,nominal,nasa:ims_bearing_dataset:b1_run1
+2004-02-17T18:22:00Z,bearing_1,0.145,0.138,2.75,122.3,warning,nasa:ims_bearing_dataset:b1_run1
+2004-02-18T06:45:00Z,bearing_1,0.224,0.211,4.21,142.5,degraded,nasa:ims_bearing_dataset:b1_run1
+2004-02-19T06:22:39Z,bearing_1,0.482,0.450,8.65,168.0,critical_failure,nasa:ims_bearing_dataset:b1_run1

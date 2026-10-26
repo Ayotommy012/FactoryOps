@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>FactoryOps — Operator Recovery Intelligence Console</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #f87171;
+      --warning: #fbbf24;
+      --success: #4ade80;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; }
+    body { background: var(--bg); color: var(--text); padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
+    .badge { padding: 4px 10px; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
+    .badge-running { background: #0369a1; color: #e0f2fe; }
+    .badge-degraded { background: #991b1b; color: #fee2e2; }
+    .badge-recovering { background: #166534; color: #dcfce7; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; margin-bottom: 24px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+    .card h2 { font-size: 1.05rem; margin-bottom: 12px; color: var(--accent); display: flex; justify-content: space-between; }
+    .metric { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.9rem; }
+    .metric-val { font-weight: 600; }
+    .alert-box { background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); border-radius: 6px; padding: 12px; margin-top: 12px; font-size: 0.85rem; color: #fca5a5; }
+    .controls { display: flex; gap: 12px; margin-bottom: 24px; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 18px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+    button:hover { background: #1d4ed8; }
+    button.btn-secondary { background: #475569; }
+    button.btn-secondary:hover { background: #334155; }
+    button.btn-success { background: #16a34a; }
+    button.btn-success:hover { background: #15803d; }
+    button.btn-danger { background: #dc2626; }
+    button.btn-danger:hover { background: #b91c1c; }
+    .plan-card { border: 1px solid var(--border); border-radius: 6px; padding: 14px; margin-bottom: 12px; background: rgba(0,0,0,0.2); }
+    .plan-card.rank-1 { border-color: var(--success); }
+    .plan-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .timeline { max-height: 250px; overflow-y: auto; font-size: 0.8rem; background: #0b1120; border-radius: 6px; padding: 10px; border: 1px solid var(--border); }
+    .timeline-item { padding: 6px 0; border-bottom: 1px solid #1e293b; display: flex; gap: 10px; }
+    .timeline-time { color: var(--muted); min-width: 130px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>FactoryOps — Virtual Cocoa Operations & Recovery Intelligence</h1>
+      <p style="color: var(--muted); font-size: 0.85rem; margin-top: 4px;">Powered by Meterless World Model & NVIDIA Nemotron Reasoning</p>
+    </div>
+    <div id="scenario-status"><span class="badge badge-running">Ready</span></div>
+  </header>
+
+  <div class="controls">
+    <button onclick="initScenario()">1. Initialize Scenario</button>
+    <button onclick="advanceSteps(3)">2. Step to Anomaly (3 Steps)</button>
+    <button class="btn-secondary" onclick="fetchImpactAndPlans()">3. Analyze Impact & Generate Plans</button>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Machine Telemetry (ROAST-01) <span id="roaster-badge" class="badge badge-running">Nominal</span></h2>
+      <div class="metric"><span>Station</span><span class="metric-val">Drum Roasting</span></div>
+      <div class="metric"><span>Temperature</span><span id="val-temp" class="metric-val">115.0 °C</span></div>
+      <div class="metric"><span>Vibration RMS</span><span id="val-vib" class="metric-val">1.8 mm/s</span></div>
+      <div class="metric"><span>Rated Capacity</span><span class="metric-val">1,200 kg/h</span></div>
+      <div id="alert-container"></div>
+    </div>
+
+    <div class="card">
+      <h2>Batch & Order Consequence <span id="batch-badge" class="badge badge-running">Scheduled</span></h2>
+      <div class="metric"><span>Batch Code</span><span class="metric-val">BATCH-101 (Dark 70%)</span></div>
+      <div class="metric"><span>Planned / Actual</span><span id="val-qty" class="metric-val">2,500 kg / 0 kg</span></div>
+      <div class="metric"><span>Customer Order</span><span class="metric-val">ORD-9402 (Artisan Chocolatier)</span></div>
+      <div class="metric"><span>Delivery Deadline</span><span id="val-deadline" class="metric-val">2026-10-22 14:00 UTC</span></div>
+      <div class="metric"><span>Unintervened Completion</span><span id="val-projected" class="metric-val">On Schedule</span></div>
+      <div class="metric"><span>SLA Risk Penalty</span><span id="val-penalty" class="metric-val">$0.00</span></div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Recovery Intelligence: Deterministic Candidates & Nemotron Rationale</h2>
+      <div id="plans-container" style="color: var(--muted); font-size: 0.9rem;">
+        Click "Analyze Impact & Generate Plans" after anomaly trigger to review evaluated candidates.
+      </div>
+    </div>
+
+    <div class="card" style="grid-column: 1 / -1;">
+      <h2>Verified Event Timeline & Audit Trail</h2>
+      <div id="timeline-container" class="timeline"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentScenarioId = 'scn_demo_' + Math.random().toString(36).substring(2, 8);
+
+    async function initScenario() {
+      const res = await fetch('/simulations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Demo Roaster Thermal Run',
+          disruption_type: 'roaster_bearing_overheat',
+          scenario_id: currentScenarioId
+        })
+      });
+      const data = await res.json();
+      updateUI(data.snapshot, data.status);
+      refreshTimeline();
+    }
+
+    async function advanceSteps(n) {
+      const res = await fetch(`/simulations/${currentScenarioId}/step`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ steps: n })
+      });
+      const data = await res.json();
+      updateUI(data.snapshot, data.status);
+      refreshTimeline();
+      if (data.current_step >= 3) {
+        fetchImpactAndPlans();
+      }
+    }
+
+    async function fetchImpactAndPlans() {
+      const impRes = await fetch(`/simulations/${currentScenarioId}/recovery/impact`);
+      const impact = await impRes.json();
+      
+      document.getElementById('val-projected').innerText = impact.unintervened_completion.replace('T', ' ').substring(0, 19) + ' UTC';
+      document.getElementById('val-penalty').innerText = '$' + impact.potential_penalty_usd.toFixed(2);
+      if (impact.sla_breached) {
+        document.getElementById('val-penalty').style.color = '#f87171';
+      }
+
+      const planRes = await fetch(`/simulations/${currentScenarioId}/recovery/plans`, { method: 'POST' });
+      const planData = await planRes.json();
+      renderPlans(planData.plans);
+    }
+
+    function renderPlans(plans) {
+      const container = document.getElementById('plans-container');
+      container.innerHTML = '';
+      plans.forEach(p => {
+        const div = document.createElement('div');
+        div.className = `plan-card rank-${p.rank}`;
+        div.innerHTML = `
+          <div class="plan-header">
+            <div><strong>Rank #${p.rank}: ${p.title}</strong> <span class="badge ${p.meets_deadline ? 'badge-recovering' : 'badge-degraded'}">${p.meets_deadline ? 'Meets SLA Buffer (' + p.buffer_hours + 'h)' : 'Breaches Deadline'}</span></div>
+            <div style="font-weight: 700; color: var(--accent);">$${p.total_cost_usd.toFixed(2)}</div>
+          </div>
+          <p style="font-size: 0.85rem; color: #cbd5e1; margin-bottom: 8px;">${p.explanation.replace(/\n/g, '<br>')}</p>
+          <div style="display: flex; gap: 8px; margin-top: 10px;">
+            <button class="btn-success" onclick="decide('${p.plan_id}', 'approved')">Approve Plan #${p.rank}</button>
+            <button class="btn-danger" onclick="decide('${p.plan_id}', 'rejected')">Reject</button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function decide(planId, decision) {
+      const res = await fetch(`/simulations/${currentScenarioId}/recovery/decide`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: planId,
+          decision: decision,
+          operator_id: 'OP-LEAD-CHIEF',
+          rationale: 'Operator review of SLA buffer and deterministic cost ranking.'
+        })
+      });
+      const data = await res.json();
+      alert(`Decision applied: ${data.decision.toUpperCase()} for ${data.plan_id}\nScenario Status: ${data.updated_scenario_status}`);
+      const scnRes = await fetch(`/simulations/${currentScenarioId}`);
+      const scn = await scnRes.json();
+      updateUI(scn.snapshot, scn.status);
+      refreshTimeline();
+    }
+
+    function updateUI(snap, status) {
+      document.getElementById('scenario-status').innerHTML = `<span class="badge badge-${status}">${status}</span>`;
+      const m = snap.machines['machine:plant:ROAST-01'];
+      if (m) {
+        document.getElementById('val-temp').innerText = m.temperature_c.toFixed(1) + ' °C';
+        document.getElementById('val-vib').innerText = m.vibration_rms.toFixed(1) + ' mm/s';
+        document.getElementById('roaster-badge').className = `badge badge-${m.status}`;
+        document.getElementById('roaster-badge').innerText = m.status;
+
+        if (m.status === 'degraded') {
+          document.getElementById('alert-container').innerHTML = `
+            <div class="alert-box">
+              CRITICAL ANOMALY: Bearing temp ${m.temperature_c} °C exceeds threshold 120 °C. Throughput throttled to 15%.
+            </div>
+          `;
+        } else {
+          document.getElementById('alert-container').innerHTML = '';
+        }
+      }
+      const b = snap.batches['production_batch:mes:BATCH-101'];
+      if (b) {
+        document.getElementById('val-qty').innerText = `${b.planned_quantity_kg.toFixed(0)} kg / ${b.actual_quantity_kg.toFixed(0)} kg`;
+        document.getElementById('batch-badge').className = `badge badge-${b.status}`;
+        document.getElementById('batch-badge').innerText = b.status;
+      }
+    }
+
+    async function refreshTimeline() {
+      const res = await fetch(`/simulations/${currentScenarioId}/timeline`);
+      const data = await res.json();
+      const container = document.getElementById('timeline-container');
+      container.innerHTML = data.timeline.map(e => `
+        <div class="timeline-item">
+          <span class="timeline-time">${e.simulation_time.replace('T', ' ').substring(0, 19)}</span>
+          <span style="font-weight: 600; color: var(--accent); min-width: 170px;">${e.event_type}</span>
+          <span style="color: #cbd5e1;">${JSON.stringify(e.payload)}</span>
+        </div>
+      `).join('');
+    }
+  </script>
+</body>
+</html>
