@@ -1,5 +1,37 @@
 # FactoryOps Backend
+FactoryOps — Manufacturing Disruption Investigation & Recovery
 
+FactoryOps is an AI-assisted operational intelligence platform for investigating manufacturing disruptions, tracing their downstream consequences, and evaluating recovery plans before operators act.
+
+A disruption in one part of a factory can affect machine availability, production batches, inventory, supplier dependencies, customer orders, delivery commitments, and operational costs. FactoryOps connects these dependencies so operators can investigate the impact, compare feasible recovery options, and verify outcomes.
+
+What FactoryOps Does
+
+* Investigates disruptions: Trace dependencies across equipment, production, inventory, suppliers, and customer orders.
+* Simulates consequences: Advance a discrete-step operational simulation and inspect projected delays and downstream effects.
+* Evaluates recovery plans: Compare candidate plans using deterministic feasibility checks, cost considerations, and AI-assisted explanations where available.
+* Keeps operators in control: Support human approval, rejection, and audit recording, with execution governed by explicit authorization and feasibility checks.
+* Maintains operational traceability: Inspect chronological events, state changes, and source provenance.
+
+Technology Stack
+
+* Backend: Python, FastAPI, Uvicorn
+* Frontend: React 19, TypeScript, Vite
+* Database: PostgreSQL
+* Data integration: Zetaris Networked Data Platform (NDP), where configured and available
+* AI assistance: Meterless runtime and NVIDIA-related model capabilities where configured and verified
+
+FactoryOps distinguishes live integrations from deterministic fallbacks. A fallback response should not be interpreted as evidence that an external sponsor service was successfully invoked.
+
+Running Locally
+
+Follow the prerequisites, environment setup, PostgreSQL startup, backend startup, and frontend instructions below. The application can be evaluated locally without a public deployment URL.
+
+Deployment Status
+
+A public deployment was not completed because of electricity and power-availability constraints during the submission period. The source code and local setup instructions are available in this public repository so reviewers can inspect and run the project locally.
+
+Review note: Sponsor integration status, test results, and demo behavior should be verified against the current code and runtime environment rather than inferred from the interface alone.
 FastAPI foundation for FactoryOps operational intelligence and investigation platform.
 
 ---
