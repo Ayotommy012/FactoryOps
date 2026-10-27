@@ -27,9 +27,7 @@ Running Locally
 
 Follow the prerequisites, environment setup, PostgreSQL startup, backend startup, and frontend instructions below. The application can be evaluated locally without a public deployment URL.
 
-Deployment Status
 
-A public deployment was not completed because of electricity and power-availability constraints during the submission period. The source code and local setup instructions are available in this public repository so reviewers can inspect and run the project locally.
 
 Review note: Sponsor integration status, test results, and demo behavior should be verified against the current code and runtime environment rather than inferred from the interface alone.
 FastAPI foundation for FactoryOps operational intelligence and investigation platform.
