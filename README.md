@@ -13,6 +13,37 @@ What FactoryOps Does
 * Keeps operators in control: Support human approval, rejection, and audit recording, with execution governed by explicit authorization and feasibility checks.
 * Maintains operational traceability: Inspect chronological events, state changes, and source provenance.
 
+  
+## Architecture
+
+FactoryOps uses a React frontend and FastAPI backend to simulate factory disruptions, analyse their downstream effects, and evaluate recovery options. PostgreSQL stores application state and scenario history, while external integrations support model-assisted workflows and federated data access where configured.
+
+```mermaid
+flowchart TD
+    OP["Factory Operator"]
+    UI["React + TypeScript Dashboard"]
+    API["FastAPI Backend"]
+    SIM["Simulation Engine"]
+    DIS["Disruption Analysis"]
+    REC["Recovery Planning"]
+    DB[("PostgreSQL")]
+    LOG["Scenario State & Event History"]
+    M["Meterless World Model"]
+    Z["Zetaris NDP"]
+
+    OP <--> UI
+    UI <--> API
+    API --> SIM
+    API --> DIS
+    API --> REC
+    SIM <--> DB
+    SIM --> LOG
+    LOG --> DB
+    SIM -. "Model-assisted workflow, if configured" .-> M
+    API -. "Federated data access, if configured" .-> Z
+```
+
+
 Technology Stack
 
 * Backend: Python, FastAPI, Uvicorn
