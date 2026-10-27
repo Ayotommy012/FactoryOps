@@ -302,8 +302,22 @@ def create_scenario(
     recovery loop. Scenarios created before this flag existed carry no flag and
     are never picked up automatically.
     """
-    if not scenario_id:
-        scenario_id = f"scn_{uuid.uuid4().hex[:12]}"
+    if scenario_id:
+        if len(scenario_id) > 64:
+            raise ValueError(
+                f"Scenario ID '{scenario_id}' exceeds maximum allowed length of 64 characters ({len(scenario_id)})."
+            )
+        existing = session.get(SimulationScenario, scenario_id)
+        if existing:
+            raise ValueError(
+                f"Scenario '{scenario_id}' already exists with status '{existing.status}'. Cannot overwrite or reuse an existing scenario."
+            )
+    else:
+        while True:
+            generated_id = f"scn_{uuid.uuid4().hex[:12]}"
+            if not session.get(SimulationScenario, generated_id):
+                scenario_id = generated_id
+                break
 
     initial_snapshot = build_initial_scenario_snapshot(session)
     world = build_scenario_world_model(scenario_id, initial_snapshot)
@@ -324,15 +338,24 @@ def create_scenario(
             "disruption_type": disruption_type,
             "world_model_state": world.state_shape(),
             "autonomous_recovery": {"enabled": bool(autonomous_recovery)},
+            "auto_advance": True,
+            "last_active_at": datetime.now(timezone.utc).isoformat(),
         },
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
     session.add(scenario)
 
-    # Emit scenario initialized event
+    # Emit scenario initialized event (deterministic & collision-resistant <= 64 chars)
+    init_raw = f"evt_{scenario_id}_0_init"
+    if len(init_raw) <= 64:
+        init_ev_id = init_raw
+    else:
+        init_hash = hashlib.sha256(scenario_id.encode("utf-8")).hexdigest()[:16]
+        init_ev_id = f"evt_{scenario_id[:32]}_{init_hash}_0_init"
+
     init_event = OperationalEvent(
-        event_id=f"evt_{scenario_id}_0_init",
+        event_id=init_ev_id,
         scenario_id=scenario_id,
         event_type="scenario.initialized",
         schema_version=1,
@@ -489,15 +512,81 @@ def step_scenario(
     session: Session,
     scenario_id: str,
     steps: int = 1,
+    idempotency_key: Optional[str] = None,
+    target_step: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Advances the scenario by N steps, applying a scheduled catalogue disruption
-    when the clock reaches step 3, and re-syncs incident severity with the live
-    evidence afterwards so stored incidents, APIs and UI badges agree.
+    Advances the scenario by N steps with database-backed advisory serialization,
+    row-level locking, idempotent step detection, scheduled catalogue disruptions,
+    and live incident severity synchronization.
     """
-    scenario = session.get(SimulationScenario, scenario_id)
-    params = (scenario.parameters or {}) if scenario else {}
-    start_step = (params.get("snapshot") or {}).get("step", scenario.current_step if scenario else 0)
+    # 1. Acquire transaction-level advisory lock on scenario to serialize concurrent execution
+    try:
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:scenario_id))"),
+            {"scenario_id": scenario_id},
+        )
+    except Exception:
+        pass
+
+    # 2. Acquire row-level lock and refresh from DB
+    scenario = session.execute(
+        select(SimulationScenario)
+        .where(SimulationScenario.id == scenario_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if not scenario:
+        raise ValueError(f"Scenario '{scenario_id}' not found.")
+
+    if scenario.status not in ("running", "pending", "recovering"):
+        raise ValueError(f"Cannot step scenario '{scenario_id}' in status '{scenario.status}'.")
+
+    # 3. Idempotent target step check
+    if target_step is not None and scenario.current_step >= target_step:
+        return {
+            "scenario_id": scenario_id,
+            "current_step": scenario.current_step,
+            "simulation_time": scenario.simulation_time.isoformat(),
+            "status": scenario.status,
+            "disruption_type": scenario.disruption_type,
+            "events_emitted_count": 0,
+            "snapshot": scenario.parameters.get("snapshot", {}),
+            "world_model_state": scenario.parameters.get("world_model_state", {}),
+        }
+
+    # 4. Idempotency key check
+    params = scenario.parameters or {}
+    if idempotency_key:
+        recorded_keys = params.get("step_idempotency_keys") or {}
+        if idempotency_key in recorded_keys:
+            recorded = recorded_keys[idempotency_key]
+            # Detect conflicting retry with different request parameters
+            if (
+                (recorded.get("steps") is not None and recorded.get("steps") != steps)
+                or (
+                    target_step is not None
+                    and recorded.get("target_step") is not None
+                    and recorded.get("target_step") != target_step
+                )
+            ):
+                raise ValueError(
+                    f"Conflicting idempotency key '{idempotency_key}' reused with different parameters: "
+                    f"expected steps={recorded.get('steps')}, target_step={recorded.get('target_step')}; "
+                    f"got steps={steps}, target_step={target_step}."
+                )
+            return {
+                "scenario_id": scenario_id,
+                "current_step": scenario.current_step,
+                "simulation_time": scenario.simulation_time.isoformat(),
+                "status": scenario.status,
+                "disruption_type": scenario.disruption_type,
+                "events_emitted_count": 0,
+                "snapshot": params.get("snapshot", {}),
+                "world_model_state": params.get("world_model_state", {}),
+            }
+
+    start_step = (params.get("snapshot") or {}).get("step", scenario.current_step)
     needs_schedule = bool(
         scenario
         and scenario.disruption_type in SCHEDULED_CATALOGUE_DISRUPTIONS
@@ -520,6 +609,23 @@ def step_scenario(
         else:
             result = {**result, "snapshot": scenario.parameters.get("snapshot", {})}
 
+    # Update active tracking timestamp
+    scenario.parameters = {
+        **(scenario.parameters or {}),
+        "last_active_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if idempotency_key:
+        keys_dict = dict((scenario.parameters or {}).get("step_idempotency_keys") or {})
+        keys_dict[idempotency_key] = {
+            "step": scenario.current_step,
+            "steps": steps,
+            "target_step": target_step,
+            "simulation_time": scenario.simulation_time.isoformat(),
+        }
+        scenario.parameters = {**scenario.parameters, "step_idempotency_keys": keys_dict}
+        session.flush()
+
     from app.services.disruptions import sync_incident_severity
     sync_incident_severity(session, scenario_id)
     return result
@@ -541,6 +647,7 @@ def _step_scenario_impl(
         select(SimulationScenario)
         .where(SimulationScenario.id == scenario_id)
         .with_for_update()
+        .execution_options(populate_existing=True)
     ).scalar_one_or_none()
     if not scenario:
         raise ValueError(f"Scenario '{scenario_id}' not found.")
@@ -642,7 +749,7 @@ def _step_scenario_impl(
 
             mill = snapshot["machines"].get("machine:plant:MILL-01")
             batch_mill = snapshot["batches"].get("production_batch:mes:BATCH-103")
-            if mill and restores_mill and mill.get("status") in ("maintenance", "failed"):
+            if mill and restores_mill:
                 mill["status"] = "running"
                 mill["temperature_c"] = 68.0
                 mill["vibration_rms"] = 1.2
@@ -654,7 +761,7 @@ def _step_scenario_impl(
 
             press = snapshot["machines"].get("machine:plant:PRESS-01")
             batch_press = snapshot["batches"].get("production_batch:mes:BATCH-104")
-            if press and restores_press and press.get("status") in ("maintenance", "degraded"):
+            if press and restores_press:
                 press["status"] = "running"
                 press["rated_capacity_kg_h"] = 600.0
                 press["rated_capacity_kgh"] = 600.0
@@ -1087,7 +1194,8 @@ def _step_scenario_impl(
 
             # Calculate step capacity based on machine status
             if other_mach:
-                if other_mach.get("status") in ("failed", "offline"):
+                if other_mach.get("status") in ("failed", "offline", "maintenance"):
+                    # Locked-out equipment (e.g. PRESS-01 depressurised for reseal) produces nothing
                     batch_capacity = 0.0
                 elif other_mach.get("status") == "degraded":
                     batch_capacity = (other_mach.get("rated_capacity_kg_h", 1000.0) / (60.0 / scenario.step_size_minutes)) * 0.25
@@ -1302,9 +1410,34 @@ def _step_scenario_impl(
             },
         })
 
-        # Persist operational events with explicit event ordering
+        # Check if events for this scenario at current_sim_time already exist in PostgreSQL.
+        # If pre-existing events exist while scenario was at an earlier step, they cannot
+        # be treated as proof that production-state changes committed. Fail to preserve ACID integrity.
+        existing_step_events = session.execute(
+            select(OperationalEvent)
+            .where(
+                OperationalEvent.scenario_id == scenario_id,
+                OperationalEvent.simulation_time == current_sim_time,
+            )
+        ).scalars().all()
+
+        if existing_step_events:
+            raise ValueError(
+                f"Cannot advance scenario '{scenario_id}' to step {current_step}: "
+                f"{len(existing_step_events)} operational event(s) at simulation time {current_sim_time.isoformat()} already exist in database."
+            )
+
+        # Persist operational events with explicit event ordering and deterministic, collision-resistant <= 64 char ID
         for idx, ev_data in enumerate(step_events_data):
-            ev_id = f"evt_{scenario_id}_{current_step}_{idx}_{ev_data['event_type']}"
+            raw_ev_id = f"evt_{scenario_id}_{current_step}_{idx}_{ev_data['event_type']}"
+            if len(raw_ev_id) <= 64:
+                ev_id = raw_ev_id
+            else:
+                prefix = f"evt_{scenario_id[:16]}_{current_step}_{idx}_"
+                digest = hashlib.sha256(raw_ev_id.encode("utf-8")).hexdigest()[:12]
+                suffix = f"_{digest}"
+                ev_id = f"{prefix}{ev_data['event_type'][:64-len(prefix)-len(suffix)]}{suffix}"
+
             op_event = OperationalEvent(
                 event_id=ev_id,
                 scenario_id=scenario_id,

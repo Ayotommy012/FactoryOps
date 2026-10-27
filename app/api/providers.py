@@ -1,6 +1,7 @@
 """API Router for LLM Providers including Meterless Runtime."""
 
 import logging
+import os
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -10,6 +11,7 @@ from app.providers.meterless import (
     MeterlessClient,
     ProviderStatus,
     auto_detect_meterless_runtime,
+    get_rate_limit_state,
     normalize_meterless_url,
     parse_connect_link,
 )
@@ -46,6 +48,9 @@ def get_meterless_status(
             "message": status.message,
             "available_models": status.available_models,
             "tested_at": status.tested_at,
+            "cloud_jobs_allowed": os.getenv("NIGHTSHIFT_ALLOW_CLOUD_JOBS", "false").strip().lower() in ("true", "1", "yes"),
+            # Shared back-pressure state (cooldown after upstream 429s)
+            "rate_limit": get_rate_limit_state(status.base_url),
         }
     except Exception as e:
         logger.warning(f"Meterless status check failed: {e}")

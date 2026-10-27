@@ -10,8 +10,10 @@ from app.models.base import Base
 logger = logging.getLogger(__name__)
 
 # SQLAlchemy 2.x engine using psycopg (Psycopg 3)
+# Normalize localhost to 127.0.0.1 to prevent Windows IPv6 timeout delays on psycopg connection
+_normalized_db_url = settings.database_url.replace("@localhost:", "@127.0.0.1:")
 engine = create_engine(
-    settings.database_url,
+    _normalized_db_url,
     connect_args={"connect_timeout": 10},
     pool_pre_ping=True,
     pool_size=5,

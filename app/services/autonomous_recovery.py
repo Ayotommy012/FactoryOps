@@ -73,6 +73,7 @@ class DisruptionCharacterization:
     inventory_summary: Dict[str, Any]
     hard_safety_thresholds: Dict[str, Any]
     severity: Literal["low", "medium", "high", "critical"] = "medium"
+    zetaris_facts: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -252,6 +253,7 @@ def characterize_disruption(session: Session, scenario_id: str) -> DisruptionCha
         inventory_summary=inventory_summary,
         hard_safety_thresholds=hard_safety_thresholds,
         severity=impact.severity,
+        zetaris_facts=impact.provenance_summary.get("zetaris_facts"),
     )
 
 
@@ -295,6 +297,15 @@ def build_nightshift_investigation_prompt(
         f"Potential SLA Breach Penalty: ${characterization.potential_penalty_usd:.2f}\n\n"
         f"Anomaly Evidence Telemetry:\n{json.dumps(characterization.evidence, indent=2)}\n\n"
         f"Inventory & Raw Materials:\n{json.dumps(characterization.inventory_summary, indent=2)}\n\n"
+)
+
+    if characterization.zetaris_facts:
+        prompt += (
+            "=== 1.5 ZETARIS FEDERATED METASTORE & LOGISTICS CONTEXT ===\n"
+            f"{json.dumps(characterization.zetaris_facts, indent=2)}\n\n"
+        )
+
+    prompt += (
         "=== 2. OPERATIONAL OBJECTIVES (STRICT PRIORITY ORDER) ===\n"
         "1. HARD SAFETY CONSTRAINTS: Never operate equipment above thermal/vibration thresholds.\n"
         "2. ORDER COMMITMENTS: Minimize customer delivery delays and prevent SLA financial penalties.\n"
@@ -366,6 +377,15 @@ def parse_nightshift_decision_json(
                 return matched_id, rationale, trade_off, safety, confidence, contingency
     except Exception as e:
         logger.debug(f"JSON parsing failed for Nightshift decision: {e}")
+        # A long answer can be cut off by the token limit after the decision
+        # itself was emitted; salvage it, still restricted to valid candidates.
+        salvage = re.search(r'"selected_plan_id"\s*:\s*"([^"]+)"', cleaned)
+        if salvage:
+            matched_id = next((cid for cid in candidate_plan_ids if cid.lower() == salvage.group(1).strip().lower()), None)
+            if matched_id:
+                rationale_match = re.search(r'"strategic_rationale"\s*:\s*"([^"]*)', cleaned)
+                rationale = rationale_match.group(1) if rationale_match else "Selected by Meterless (response truncated)."
+                return matched_id, rationale, "", "", 0.5, None
 
     return None, None, None, None, 0.0, None
 
@@ -396,6 +416,7 @@ def _select_strategy_via_chat(
         f"{policy_lines}\n"
         f"You may ONLY select one of: {selectable_ids}. AUTO_EXECUTE plans run immediately; "
         "REQUIRES_APPROVAL plans wait for a human operator. Weigh that delay in your trade-off.\n"
+        "Keep every text field under 60 words and put selected_plan_id first.\n"
     )
     model = os.getenv("METERLESS_MODEL") or settings.meterless_model or "meterless/auto"
     try:
@@ -407,7 +428,7 @@ def _select_strategy_via_chat(
             messages=[{"role": "user", "content": full_prompt}],
             model=model,
             temperature=0.1,
-            max_tokens=2000,
+            max_tokens=3000,
             retry_budget_sec=budget,
         )
     except MeterlessRateLimitError as e:
@@ -417,6 +438,7 @@ def _select_strategy_via_chat(
 
     plan_id, rationale, trade_off, safety, conf, cont = parse_nightshift_decision_json(raw, selectable_ids)
     if not plan_id:
+        logger.warning("Unusable Meterless decision (%d chars): %r", len(raw or ""), (raw or "")[:300])
         return None, "Meterless decision response did not select a valid, non-blocked candidate; deterministic selection used."
     return StrategicDecision(
         selected_plan_id=plan_id,
@@ -698,6 +720,10 @@ def validate_candidate_plan(
             violated.append(f"SILO_CAPACITY_OVERFLOW: Receiving 5,000 kg would overflow Silo 1 capacity ({capacity} kg).")
         else:
             passed.append("Silo storage capacity verified for 5,000 kg spot delivery.")
+        if any("OUT OF STOCK" in c or "UNVERIFIED" in c for c in plan.hard_constraints_met):
+            violated.append("ZETARIS_EXTERNAL_STOCK_UNAVAILABLE: Regional buffer inventory is out of stock or unverified in Zetaris.")
+        elif any("Zetaris Federated Metastore" in c for c in plan.hard_constraints_met):
+            passed.append("Zetaris external inventory availability verified in TPCDS_DB metastore.")
 
     # 6. Order Deadline & Customer SLA Invariant
     if not plan.meets_deadline:
@@ -778,6 +804,20 @@ def execute_autonomous_recovery(
         ),
         confidence=decision.confidence_score,
     )
+
+    if plan.plan_id == "plan_spot_market_buffer":
+        world.assert_fact(
+            about="inventory_lot:wms:LOT-SPOT-01",
+            predicate="source_system",
+            value="zetaris_ndp_federation:TPCDS_DB.inventory",
+            source=Provenance(
+                kind="zetaris_federation",
+                at=applied_at.isoformat(),
+                by="zetaris:TPCDS_DB.inventory",
+                run_id=scenario_id,
+            ),
+            confidence=1.0,
+        )
 
     # 3. Store recovery parameters
     recovery_payload = {
@@ -986,10 +1026,15 @@ HANDLED_RECOVERY_STATUSES = ("in_progress", "completed", "pending_approval", "bl
 
 
 def incident_key_for(scenario: SimulationScenario, impact: ImpactAnalysis) -> str:
-    """Stable identity of the active incident: its incident record when one exists."""
+    """Stable identity of the incident: its most recent incident record when one exists.
+
+    Resolved records count too: a recovery that completes marks its incident
+    resolved, and if evidence lingers (e.g. a mitigation that defers repair) that
+    is the same incident, not a new one to re-run a lifecycle for.
+    """
     snapshot = (scenario.parameters or {}).get("snapshot", {})
     for inc in reversed(snapshot.get("active_incidents") or []):
-        if inc.get("status") != "resolved" and impact.disruption_type in (inc.get("type"), inc.get("disruption_type")):
+        if impact.disruption_type in (inc.get("type"), inc.get("disruption_type")):
             return str(inc.get("incident_id"))
     return f"{impact.disruption_type}|{impact.disrupted_machine_id}"
 

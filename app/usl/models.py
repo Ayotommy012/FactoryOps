@@ -73,6 +73,47 @@ class CanonicalCustomerOrder:
 
 
 @dataclass
+class CanonicalExternalBufferStock:
+    """Canonical representation of external warehouse stock queried via Zetaris NDP."""
+    warehouse_id: str                       # e.g. 'warehouse:external:AAAAAAAABAAAAAAA'
+    warehouse_name: str                     # e.g. 'Conventional childr' / Amsterdam Terminal
+    item_id: str                            # e.g. 'item:external:AAAAAAAABAAAAAAA'
+    item_desc: str                          # Description / specification of item
+    quantity_on_hand_kg: float              # Available inventory quantity
+    unit_price_usd: float                   # Unit cost in USD
+    record_kind: SemanticRecordKind = SemanticRecordKind.MEASURED_FACT
+    provenance: USLProvenance = field(
+        default_factory=lambda: USLProvenance(
+            source_system="zetaris_ndp_federation",
+            source_dataset="TPCDS_DB.inventory+warehouse+item",
+            original_record_id="",
+            source_url_or_ref="jdbc:zetaris:lightning@localhost:10000",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+
+@dataclass
+class CanonicalTransitEnvironmentalCondition:
+    """Canonical representation of transit route weather queried via Zetaris NDP."""
+    location_id: str                        # e.g. 'loc:weather:1'
+    temperature_f: float                    # Ambient temperature in Fahrenheit
+    precipitation_in: float                 # Precipitation in inches
+    wind_speed_mph: float                   # Wind speed in mph
+    road_risk_level: str                    # 'nominal' | 'adverse' | 'hazardous'
+    record_kind: SemanticRecordKind = SemanticRecordKind.MEASURED_FACT
+    provenance: USLProvenance = field(
+        default_factory=lambda: USLProvenance(
+            source_system="zetaris_ndp_federation",
+            source_dataset="NY_TAXI.weather_data",
+            original_record_id="",
+            source_url_or_ref="jdbc:zetaris:lightning@localhost:10000",
+            observed_at=datetime.now(timezone.utc).isoformat(),
+        )
+    )
+
+
+@dataclass
 class USLMappingDefinition:
     source_entity: str
     canonical_entity: str

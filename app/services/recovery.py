@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import OperationalEvent, SimulationScenario
 from app.services.simulation import get_scenario_world_model
+from app.usl import UnifiedSemanticLayerService
 from app.world_model import Provenance, WorldModel
 
 logger = logging.getLogger("factoryops.recovery")
@@ -923,6 +924,50 @@ def generate_candidate_plans(
     # Supply Chain Disruption Recovery Candidate Plans
     # -------------------------------------------------------------------------
     if impact.disrupted_machine_id == "silo:plant:SILO-01":
+        # Federated external data query via Zetaris NDP
+        usl = UnifiedSemanticLayerService()
+        zetaris_ctx = usl.fetch_federated_recovery_context(impact.disruption_type)
+        stock_info = zetaris_ctx.get("external_buffer_stock")
+        weather_info = zetaris_ctx.get("transit_weather")
+
+        spot_constraints: List[str] = []
+        spot_feasible = True
+
+        if stock_info and stock_info.get("quantity_on_hand_kg", 0) > 0:
+            wh_name = stock_info["warehouse_name"]
+            wh_qty = stock_info["quantity_on_hand_kg"]
+            itm_id = stock_info["item_id"]
+            spot_constraints.append(
+                f"Zetaris Federated Metastore (TPCDS_DB.warehouse '{wh_name}'): Verified {wh_qty:.0f} kg available in external inventory ({itm_id})"
+            )
+            spot_feasible = True
+        elif stock_info and stock_info.get("quantity_on_hand_kg", 0) <= 0:
+            spot_constraints.append(
+                "Zetaris Federated Metastore (TPCDS_DB.inventory): Regional external warehouse inventory OUT OF STOCK"
+            )
+            spot_feasible = False
+        else:
+            spot_constraints.append(
+                "Regional warehouse (Amsterdam Terminal) confirms 5,000 kg organic cocoa beans available for immediate dispatch"
+            )
+            spot_feasible = True
+
+        if weather_info:
+            road_risk = weather_info.get("road_risk_level", "nominal")
+            temp_f = weather_info.get("temperature_f", 72.0)
+            precip = weather_info.get("precipitation_in", 0.0)
+            spot_constraints.append(
+                f"Zetaris Transit Telemetry (NY_TAXI.weather_data): Route environmental status is {road_risk} ({temp_f}°F, {precip} in precipitation)"
+            )
+
+        spot_constraints.extend([
+            "Pre-approved supplier rating: A+ (Sanitary & organic certificates verified via USL)",
+            "Transit window: 2 hours to plant receiving silo",
+        ])
+
+        if zetaris_ctx.get("zetaris_connected"):
+            impact.provenance_summary["zetaris_facts"] = zetaris_ctx
+
         # Plan 1: Spot Market Buffer Procurement (Rank 1 - Preserves SLA, eliminates stockout)
         downtime_spot = 0.5  # 30 min receiving & QA
         finish_spot = sim_time + timedelta(hours=3.5)
@@ -934,12 +979,8 @@ def generate_candidate_plans(
             title="Spot Market Buffer Procurement (5,000 kg Certified Lot)",
             strategy="reroute",
             rank=1,
-            feasibility_verdict="feasible",
-            hard_constraints_met=[
-                "Regional warehouse (Amsterdam Terminal) confirms 5,000 kg organic cocoa beans available for immediate dispatch",
-                "Pre-approved supplier rating: A+ (Sanitary & organic certificates verified)",
-                "Transit window: 2 hours to plant receiving silo",
-            ],
+            feasibility_verdict="feasible" if spot_feasible else "infeasible",
+            hard_constraints_met=spot_constraints,
             estimated_downtime_hours=downtime_spot,
             projected_completion=finish_spot.isoformat(),
             meets_deadline=meets_spot,
@@ -1318,6 +1359,14 @@ def generate_candidate_plans(
 
     plans = [plan_a, plan_b, plan_c]
     _annotate_plan_authorizations(plans, disruption_type=impact.disruption_type, scenario=scenario, impact=impact)
+
+    # Release read transaction before long-running AI explanation to free PostgreSQL connections.
+    # Rollback ensures no partial or unrelated caller changes are accidentally committed.
+    try:
+        if not session.dirty and not session.new:
+            session.rollback()
+    except Exception:
+        pass
 
     # Attach operational explanations: ONE Meterless call for the whole candidate
     # set (previously three back-to-back calls, which tripped the upstream 429).

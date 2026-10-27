@@ -40,6 +40,11 @@ export function App() {
   const [nasaTimeline, setNasaTimeline] = useState<NASABearingRecord[]>([])
   const [timeline, setTimeline] = useState<OperationalTimelineEvent[]>([])
   const [timingStatus, setTimingStatus] = useState<TimingStatusResponse | null>(null)
+  const [scenariosList, setScenariosList] = useState<Scenario[]>([])
+  const activeScenarioIdRef = useRef<string | null>(null)
+  const refreshSeqRef = useRef(0)
+  const isPollingRef = useRef(false)
+  const lastKnownStepRef = useRef<Record<string, number>>({})
 
   const [loading, setLoading] = useState(false)
   const [loadingPlans, setLoadingPlans] = useState(false)
@@ -54,16 +59,57 @@ export function App() {
     }, 4000)
   }
 
-  // Load baseline scenario or create default demo run
-  const loadOrCreateScenario = useCallback(async () => {
+  const setActiveScenarioAndUrl = useCallback((sc: Scenario) => {
+    activeScenarioIdRef.current = sc.id
+    setScenario(sc)
+    const url = new URL(window.location.href)
+    if (url.searchParams.get('scenario') !== sc.id) {
+      url.searchParams.set('scenario', sc.id)
+      window.history.pushState({}, '', url.toString())
+    }
+  }, [])
+
+  const refreshScenarioList = useCallback(async () => {
     try {
+      const list = await api.listSimulations()
+      setScenariosList(list)
+      return list
+    } catch (e) {
+      console.warn('Failed to list scenarios:', e)
+      return []
+    }
+  }, [])
+
+  // Load requested scenario, most relevant existing scenario, or create default demo run
+  const loadOrCreateScenario = useCallback(async (list: Scenario[]) => {
+    try {
+      // 1. Check URL query parameter first
+      const params = new URLSearchParams(window.location.search)
+      const urlScenarioId = params.get('scenario')
+      if (urlScenarioId) {
+        try {
+          const specific = await api.getSimulation(urlScenarioId)
+          setActiveScenarioAndUrl(specific)
+          return specific.id
+        } catch {
+          console.warn(`Scenario ${urlScenarioId} from URL not found, falling back.`)
+        }
+      }
+
+      // 2. If list has active/recent scenarios, pick the latest active one or the latest one
+      if (list.length > 0) {
+        const active = list.find((s) => s.status === 'running' || s.status === 'degraded' || s.status === 'recovering') || list[0]
+        setActiveScenarioAndUrl(active)
+        return active.id
+      }
+
+      // 3. Fall back to demo runner or creating new baseline
       const demoId = 'scn_demo_runner'
       try {
         const existing = await api.getSimulation(demoId)
-        setScenario(existing)
+        setActiveScenarioAndUrl(existing)
         return existing.id
       } catch {
-        // If not found, spawn demo
         const created = await api.createSimulation({
           name: 'Demo Roaster Thermal Disruption Run',
           disruption_type: 'roaster_bearing_overheat',
@@ -71,36 +117,71 @@ export function App() {
           step_size_minutes: 15,
           scenario_id: demoId,
         })
-        setScenario(created)
+        setActiveScenarioAndUrl(created)
         return created.id
       }
     } catch (e) {
-      console.error('Failed to initialize baseline scenario:', e)
+      console.error('Failed to initialize scenario:', e)
       return null
     }
-  }, [])
+  }, [setActiveScenarioAndUrl])
 
-  // Refresh active scenario data
-  const refreshScenarioData = useCallback(async (scenarioId: string) => {
+  // Refresh active scenario data with sequence-order gating and monotonic step protection
+  const refreshScenarioData = useCallback(async (scenarioId: string, options?: { full?: boolean }) => {
+    if (!scenarioId) return
+    const thisSeq = ++refreshSeqRef.current
+
     try {
-      const [scn, tl, wm, timing] = await Promise.all([
+      // 1. Fetch core scenario state and timing status
+      const [scn, timing] = await Promise.all([
         api.getSimulation(scenarioId),
-        api.getTimeline(scenarioId).catch(() => ({ timeline: [] })),
-        api.getWorldModel(scenarioId).catch(() => null),
         api.getTimingStatus(scenarioId).catch(() => null),
       ])
-      setScenario(scn)
-      setTimeline(tl.timeline || [])
-      if (wm) setWorldModel(wm)
+
+      // Stale response checks:
+      // a) User switched active scenario while request was in-flight
+      // b) A newer refresh request was already initiated
+      if (activeScenarioIdRef.current && activeScenarioIdRef.current !== scenarioId) {
+        return
+      }
+      if (thisSeq < refreshSeqRef.current) {
+        return
+      }
+
+      const prevStep = lastKnownStepRef.current[scenarioId] ?? -1
+      const stepChanged = scn.current_step !== prevStep
+      lastKnownStepRef.current[scenarioId] = scn.current_step
+
+      // Monotonic step update guard: prevent out-of-order polling responses from rolling back the clock
+      setScenario((prev) => {
+        if (!prev || prev.id !== scenarioId) return scn
+        if (prev.current_step > scn.current_step) {
+          return {
+            ...scn,
+            current_step: prev.current_step,
+            simulation_time: prev.simulation_time,
+          }
+        }
+        return scn
+      })
+
       if (timing) setTimingStatus(timing)
 
-      // Impact is deterministic and cheap (no AI call): keep it in sync for any
-      // incident type so severity badges match the backend's live evidence.
-      try {
-        const imp = await api.getRecoveryImpact(scenarioId)
-        setImpact(imp)
-      } catch {
-        // ignore
+      // 2. Fetch heavy auxiliary data (timeline, worldModel, impact) only when full refresh
+      // is requested, or on step change / initial load.
+      if (options?.full || stepChanged || prevStep === -1) {
+        const [tl, wm, imp] = await Promise.allSettled([
+          api.getTimeline(scenarioId),
+          api.getWorldModel(scenarioId),
+          api.getRecoveryImpact(scenarioId),
+        ])
+
+        if (activeScenarioIdRef.current && activeScenarioIdRef.current !== scenarioId) return
+        if (thisSeq < refreshSeqRef.current) return
+
+        if (tl.status === 'fulfilled') setTimeline(tl.value.timeline || [])
+        if (wm.status === 'fulfilled') setWorldModel(wm.value)
+        if (imp.status === 'fulfilled') setImpact(imp.value)
       }
     } catch (e) {
       console.error('Failed to refresh scenario data:', e)
@@ -112,14 +193,15 @@ export function App() {
     const init = async () => {
       setLoading(true)
       try {
-        // Load system statuses in parallel
-        const [h, dbH, meterless, zetaris, maps, nasa] = await Promise.allSettled([
+        // Load system statuses and scenario list in parallel
+        const [h, dbH, meterless, zetaris, maps, nasa, scnList] = await Promise.allSettled([
           api.getHealth(),
           api.getDbHealth(),
           api.getMeterlessStatus(),
           api.getZetarisStatus(),
           api.getUSLMappings(),
           api.getNASABearingTimeline(),
+          api.listSimulations().catch(() => []),
         ])
 
         if (h.status === 'fulfilled') setHealth(h.value)
@@ -128,9 +210,11 @@ export function App() {
         if (zetaris.status === 'fulfilled') setZetarisStatus(zetaris.value)
         if (maps.status === 'fulfilled') setMappings(maps.value.mappings || [])
         if (nasa.status === 'fulfilled') setNasaTimeline(nasa.value.timeline || [])
+        const currentList = scnList.status === 'fulfilled' && Array.isArray(scnList.value) ? scnList.value : []
+        setScenariosList(currentList)
 
-        // Initialize or load demo scenario
-        const scnId = await loadOrCreateScenario()
+        // Initialize or load requested/most recent scenario
+        const scnId = await loadOrCreateScenario(currentList)
         if (scnId) {
           await refreshScenarioData(scnId)
         }
@@ -145,11 +229,17 @@ export function App() {
   // Step simulation
   const handleStep = async (steps: number) => {
     if (!scenario) return
+    const currentScenarioId = scenario.id
     setLoading(true)
     try {
-      const res = await api.stepSimulation(scenario.id, steps)
+      const stepKey = `step_${currentScenarioId}_${scenario.current_step + 1}_${Date.now()}`
+      const targetStep = scenario.current_step + steps
+      const res = await api.stepSimulation(currentScenarioId, steps, stepKey, targetStep)
+      if (activeScenarioIdRef.current && activeScenarioIdRef.current !== currentScenarioId) {
+        return
+      }
       setScenario((prev) =>
-        prev
+        prev && prev.id === currentScenarioId
           ? {
               ...prev,
               current_step: res.current_step,
@@ -157,11 +247,11 @@ export function App() {
               status: res.status,
               snapshot: res.snapshot,
             }
-          : null
+          : prev
       )
 
       showToast(`Advanced simulation clock by ${steps} step(s) to step ${res.current_step}.`)
-      await refreshScenarioData(scenario.id)
+      await refreshScenarioData(currentScenarioId, { full: true })
       // Plans (which carry a Meterless explanation) are fetched on demand from the
       // Recovery tab, not on every step: per-step fetches were a 429 source.
     } catch (e: unknown) {
@@ -176,13 +266,17 @@ export function App() {
   const plansInFlight = useRef(false)
   const handleFetchImpactAndPlans = async () => {
     if (!scenario || plansInFlight.current) return
+    const currentScenarioId = scenario.id
     plansInFlight.current = true
     setLoadingPlans(true)
     try {
       const [imp, pl] = await Promise.all([
-        api.getRecoveryImpact(scenario.id),
-        api.getRecoveryPlans(scenario.id),
+        api.getRecoveryImpact(currentScenarioId),
+        api.getRecoveryPlans(currentScenarioId),
       ])
+      if (activeScenarioIdRef.current && activeScenarioIdRef.current !== currentScenarioId) {
+        return
+      }
       setImpact(imp)
       setPlans(pl.plans || [])
       showToast(`Evaluated ${pl.candidate_count} ranked recovery candidate plans.`)
@@ -198,13 +292,17 @@ export function App() {
   // Human-in-the-Loop Decision submit
   const handleDecide = async (decision: RecoveryDecisionRequest) => {
     if (!scenario) return
+    const currentScenarioId = scenario.id
     setLoading(true)
     try {
-      const res = await api.submitRecoveryDecision(scenario.id, decision)
+      const res = await api.submitRecoveryDecision(currentScenarioId, decision)
+      if (activeScenarioIdRef.current && activeScenarioIdRef.current !== currentScenarioId) {
+        return
+      }
       showToast(
         `Decision applied: ${res.decision.toUpperCase()} for ${res.plan_id}. Status: ${res.updated_scenario_status}`
       )
-      await refreshScenarioData(scenario.id)
+      await refreshScenarioData(currentScenarioId, { full: true })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       showToast(`Decision submission failed: ${msg}`)
@@ -222,19 +320,48 @@ export function App() {
   }) => {
     setLoading(true)
     try {
-      const uniqueId = 'scn_' + Math.random().toString(36).substring(2, 8)
-      const created = await api.createSimulation({
-        ...params,
-        scenario_id: uniqueId,
-      })
-      setScenario(created)
+      const created = await api.createSimulation(params)
+      setActiveScenarioAndUrl(created)
       setImpact(null)
       setPlans([])
       showToast(`Created new simulation scenario: ${created.name} (${created.id})`)
-      await refreshScenarioData(created.id)
+      refreshScenarioList()
+      await refreshScenarioData(created.id, { full: true })
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       showToast(`Failed to create scenario: ${msg}`)
+      throw e
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Explicitly select scenario from list
+  const handleSelectScenario = async (selectedId: string) => {
+    if (!selectedId || selectedId === scenario?.id) return
+    const prevScenario = scenario
+    const prevId = activeScenarioIdRef.current
+    setLoading(true)
+    try {
+      activeScenarioIdRef.current = selectedId
+      const target = scenariosList.find((s) => s.id === selectedId)
+      if (target) {
+        setActiveScenarioAndUrl(target)
+      } else {
+        const loaded = await api.getSimulation(selectedId)
+        if (activeScenarioIdRef.current !== selectedId) return
+        setActiveScenarioAndUrl(loaded)
+      }
+      setImpact(null)
+      setPlans([])
+      await refreshScenarioData(selectedId, { full: true })
+    } catch (e: unknown) {
+      activeScenarioIdRef.current = prevId
+      if (prevScenario) {
+        setActiveScenarioAndUrl(prevScenario)
+      }
+      const msg = e instanceof Error ? e.message : String(e)
+      showToast(`Failed to switch scenario to ${selectedId}: ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -258,13 +385,29 @@ export function App() {
             (scenario.disruption_type !== 'none' && scenario.current_step >= 3))
         )
 
-  // Periodic background polling to sync state with backend auto-runner
+  // Periodic background polling to sync state with backend auto-runner (in-flight guarded)
   useEffect(() => {
     if (!scenario?.id) return
-    const timer = setInterval(() => {
-      refreshScenarioData(scenario.id)
-    }, 2500)
-    return () => clearInterval(timer)
+    const currentId = scenario.id
+    let isCancelled = false
+
+    const poll = async () => {
+      if (isCancelled || activeScenarioIdRef.current !== currentId) return
+      if (isPollingRef.current) return
+      isPollingRef.current = true
+      try {
+        await refreshScenarioData(currentId)
+      } finally {
+        isPollingRef.current = false
+      }
+    }
+
+    const timer = setInterval(poll, 2500)
+    return () => {
+      isCancelled = true
+      isPollingRef.current = false
+      clearInterval(timer)
+    }
   }, [scenario?.id, refreshScenarioData])
 
   const handleToggleAuto = async () => {
@@ -317,6 +460,8 @@ export function App() {
       {/* Header Bar */}
       <Header
         scenario={scenario}
+        scenarios={scenariosList}
+        onSelectScenario={handleSelectScenario}
         health={health}
         dbHealth={dbHealth}
         meterlessStatus={meterlessStatus}
@@ -327,13 +472,18 @@ export function App() {
         onToggleAuto={handleToggleAuto}
         onOpenRunModal={() => setIsRunModalOpen(true)}
         onOpenNewModal={() => setIsNewModalOpen(true)}
-        onRefresh={() => scenario && refreshScenarioData(scenario.id)}
+        onRefresh={() => scenario && refreshScenarioData(scenario.id, { full: true })}
       />
 
       {/* Navigation Tabs */}
       <Tabs
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={(tab) => {
+          setActiveTab(tab)
+          if (scenario?.id) {
+            refreshScenarioData(scenario.id, { full: true })
+          }
+        }}
         hasActiveAnomaly={isRoasterDegraded}
         eventCount={timeline.length}
       />

@@ -55,12 +55,16 @@ export const api = {
   getDbHealth: () => request<HealthStatus>('/health/db'),
 
   // Simulations
+  listSimulations: (status?: string) =>
+    request<Scenario[]>(status ? `/simulations?status=${encodeURIComponent(status)}` : '/simulations'),
+
   createSimulation: (params: {
     name: string
     disruption_type?: string
     random_seed?: number
     step_size_minutes?: number
     scenario_id?: string
+    autonomous_recovery?: boolean
   }) =>
     request<Scenario>('/simulations', {
       method: 'POST',
@@ -70,10 +74,14 @@ export const api = {
   getSimulation: (scenarioId: string) =>
     request<Scenario>(`/simulations/${encodeURIComponent(scenarioId)}`),
 
-  stepSimulation: (scenarioId: string, steps: number = 1) =>
+  stepSimulation: (scenarioId: string, steps: number = 1, idempotencyKey?: string, targetStep?: number) =>
     request<StepResponse>(`/simulations/${encodeURIComponent(scenarioId)}/step`, {
       method: 'POST',
-      body: JSON.stringify({ steps }),
+      body: JSON.stringify({
+        steps,
+        ...(idempotencyKey ? { idempotency_key: idempotencyKey } : {}),
+        ...(targetStep !== undefined ? { target_step: targetStep } : {}),
+      }),
     }),
 
   pauseSimulation: (scenarioId: string) =>

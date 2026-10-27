@@ -623,6 +623,7 @@ class MeterlessClient:
                     "Timed out queueing for a Meterless request slot.", attempts=attempt
                 )
             started = time.monotonic()
+            logger.info("Meterless upstream chat request (attempt %d/%d).", attempt + 1, max_retries + 1)
             try:
                 with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                     res_data = json.loads(resp.read().decode("utf-8"))

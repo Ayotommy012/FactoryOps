@@ -79,3 +79,16 @@ This document records key architectural, design, and integration decisions made 
 - **Context:** Discrete simulation requires evaluating "what-if" disruptions and multi-step scenarios without corrupting baseline operational records or interfering with parallel scenarios.
 - **Decision:** Each `SimulationScenario` owns an isolated JSONB state snapshot (`parameters["snapshot"]`) initialized from baseline operational data. Discrete simulation steps advance simulated time in fixed intervals (e.g. 15 minutes), mutate only the scenario snapshot in memory, and append immutable `OperationalEvent` records to PostgreSQL referencing the scenario ID.
 - **Rationale:** Guarantees absolute scenario isolation, prevents baseline state corruption, ensures deterministic reproducibility given a random seed, and provides an auditable, append-only chronological event timeline.
+
+---
+
+## ADR-010: Evidence-Based Severity, Shared Meterless Back-Pressure, and Risk-Based Autonomous Recovery
+- **Status:** Accepted (supersedes the "explicit human approval" clause of ADR-005 for plans the policy authorizes)
+- **Context:** Severity badges read MEDIUM for everything (catalogue API omitted `severity`; UI defaulted to medium) and detection fabricated evidence from the scenario label. Meterless failed after the first call: `meterless/auto` routes to a single cloud lane (`nvidia/nemotron-3-ultra-550b-a55b`) whose upstream answers bursts with 429, surfaced by the runtime as HTTP 502 (`nvidia_429`, no `Retry-After`); FactoryOps made three back-to-back calls per plan refresh with a cache key that changed every step. Plan selection only used Meterless through paid cloud jobs (disabled), so it never decided anything; execution always mutated ROAST-01; approval was gated on disruption category.
+- **Decision:**
+  - Detection fires only on observed snapshot state; supply risk uses Silo 1 stock; scheduled disruptions are applied for real at step 3; incident severity is re-synced from live evidence each step.
+  - One process-wide gate per runtime: bounded concurrency, shared 429 cooldown, full-jitter backoff honoring `Retry-After`, fail-fast beyond budget, single-flight de-duplication. One batched explanation call per candidate set, cached per incident.
+  - Meterless selects the plan via the chat endpoint when cloud jobs are disabled; the deterministic policy still validates and authorizes. Explanation or selection failures fall back deterministically and never block execution.
+  - Authorization is evidence-based: BLOCKED for infeasible / non-applicable / quarantine-consuming plans; REQUIRES_APPROVAL for critical severity without a pre-validated SOP, food-safety QC sign-off, or cost/downtime/SLA limits; otherwise AUTO_EXECUTE.
+  - Lifecycles claim the incident (row-locked), reclaim stale claims, back off on failure and escalate to a human after repeated failures. The auto-driver only processes scenarios that opt in (`parameters.autonomous_recovery.enabled`, default for new scenarios), one lifecycle at a time on a background worker.
+- **Rationale:** Severity, autonomy and AI influence must be grounded in evidence and survive upstream rate limits; legacy scenarios are not silently placed under autonomous control.

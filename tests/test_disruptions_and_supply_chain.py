@@ -1,3 +1,4 @@
+from sqlalchemy.orm.attributes import flag_modified
 """
 Comprehensive Integration & Verification Tests for Supply Chain Disruption,
 Disruption Simulator Catalogue & Random Mode, and Dynamic 7-Stage Production Line.
@@ -43,12 +44,17 @@ from app.services.simulation import (
 
 @pytest.fixture
 def db_session():
-    session = SessionLocal()
+    """Savepoint-isolated session (ADR-008): endpoint commits never reach the dev DB."""
+    from app.database import engine
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = Session(bind=connection, join_transaction_mode="create_savepoint")
     try:
         yield session
     finally:
-        session.rollback()
         session.close()
+        transaction.rollback()
+        connection.close()
 
 
 # =============================================================================
@@ -353,11 +359,19 @@ def test_production_line_milling_failure_cascades_downstream(db_session: Session
 # PART 4: FastAPI Router Integration for Disruptions & Production Line
 # =============================================================================
 
-def test_fastapi_disruptions_and_production_line_endpoints():
+def test_fastapi_disruptions_and_production_line_endpoints(db_session: Session):
     from fastapi.testclient import TestClient
+    from app.api.simulations import get_db
     from app.main import app
 
-    client = TestClient(app)
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        _run_disruption_api_checks(TestClient(app))
+    finally:
+        app.dependency_overrides.clear()
+
+
+def _run_disruption_api_checks(client):
 
     # 1. Create a fresh scenario
     create_resp = client.post(
@@ -518,6 +532,7 @@ def test_repeated_step_one_past_batch_completion_and_cycle_restart(db_session: S
     snap = scenario.parameters["snapshot"]
     snap["batches"]["production_batch:mes:BATCH-101"]["planned_quantity_kg"] = 1000.0
     scenario.parameters = {**scenario.parameters, "snapshot": snap}
+    flag_modified(scenario, "parameters")
     db_session.flush()
 
     silo_initial = scenario.parameters["snapshot"]["silos"]["silo_01"]["current_stock_kg"]
@@ -593,6 +608,7 @@ def test_repeated_step_three_multi_step_isolation_and_no_leakage(db_session: Ses
     snap = scenario.parameters["snapshot"]
     snap["batches"]["production_batch:mes:BATCH-101"]["planned_quantity_kg"] = 1000.0
     scenario.parameters = {**scenario.parameters, "snapshot": snap}
+    flag_modified(scenario, "parameters")
     db_session.flush()
 
     # 1st call: steps=3 -> Advances from step 0 to step 3
@@ -678,6 +694,7 @@ def test_stepping_while_paused_or_recovering_and_approval_gate(db_session: Sessi
         "start_step": 3,
         "completed_step": 5,
     }
+    flag_modified(scenario, "parameters")
     db_session.flush()
 
     eligible_rec, _ = is_scenario_eligible_for_auto_tick(scenario)
@@ -714,6 +731,7 @@ def test_stepping_when_disruption_inhibits_active_stage(db_session: Session):
     snap = scenario.parameters["snapshot"]
     snap["silos"]["silo_01"]["quality_status"] = "QUARANTINE_HOLD"
     scenario.parameters = {**scenario.parameters, "snapshot": snap}
+    flag_modified(scenario, "parameters")
     db_session.flush()
 
     # Step +1

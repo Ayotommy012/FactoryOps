@@ -17,6 +17,8 @@ import type { Scenario, HealthStatus, MeterlessStatusResponse, ZetarisStatusResp
 
 interface HeaderProps {
   scenario: Scenario | null
+  scenarios?: Scenario[]
+  onSelectScenario?: (scenarioId: string) => void
   health: HealthStatus | null
   dbHealth: HealthStatus | null
   meterlessStatus: MeterlessStatusResponse | null
@@ -32,6 +34,8 @@ interface HeaderProps {
 
 export const Header: FC<HeaderProps> = ({
   scenario,
+  scenarios = [],
+  onSelectScenario,
   health,
   dbHealth,
   meterlessStatus,
@@ -140,10 +144,26 @@ export const Header: FC<HeaderProps> = ({
           >
             <div>
               <div style={{ fontSize: '0.72rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Active Scenario
+                Active Scenario: <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--accent-orange)' }}>{scenario.id}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#e2e8f0' }}>{scenario.name}</span>
+                {scenarios && scenarios.length > 0 ? (
+                  <select
+                    className="select-input"
+                    style={{ fontSize: '0.85rem', padding: '2px 8px', maxWidth: '280px', background: 'var(--bg-card)', color: 'var(--text-main)' }}
+                    value={scenario.id}
+                    onChange={(e) => onSelectScenario?.(e.target.value)}
+                    title="Switch active scenario"
+                  >
+                    {scenarios.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.id}: {s.name} ({s.status}, step {s.current_step})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span style={{ fontWeight: 600, fontSize: '0.9rem', color: '#e2e8f0' }}>{scenario.name}</span>
+                )}
                 <span className={`badge ${getStatusBadgeClass(scenario.status)}`}>{scenario.status}</span>
               </div>
             </div>
@@ -191,7 +211,19 @@ export const Header: FC<HeaderProps> = ({
           <div>
             <div style={{ fontSize: '0.68rem', color: '#64748b', textTransform: 'uppercase' }}>Progression Mode</div>
             <div>
-              {isAwaitingDecision ? (
+              {scenario.status === 'completed' ? (
+                <span className="badge badge-nominal" style={{ fontSize: '0.70rem' }} title="Simulation completed all batches">
+                  🏁 Completed
+                </span>
+              ) : scenario.status === 'failed' ? (
+                <span className="badge badge-danger" style={{ fontSize: '0.70rem' }} title="Simulation halted due to failure">
+                  🛑 Halted (Failed)
+                </span>
+              ) : scenario.status === 'cancelled' ? (
+                <span className="badge badge-neutral" style={{ fontSize: '0.70rem' }} title="Simulation cancelled">
+                  ⏹️ Cancelled
+                </span>
+              ) : isAwaitingDecision ? (
                 <span className="badge badge-warning" style={{ fontSize: '0.70rem' }} title="Automatic progression paused awaiting operator recovery decision">
                   ⚠️ Awaiting Decision
                 </span>
@@ -284,7 +316,7 @@ export const Header: FC<HeaderProps> = ({
           <button
             className="btn btn-primary"
             onClick={() => onStep(1)}
-            disabled={loading || !scenario}
+            disabled={loading || !scenario || scenario.status === 'completed' || scenario.status === 'failed' || scenario.status === 'cancelled'}
             title="Advance factory simulation clock by 1 discrete step (15 mins)"
           >
             <Play size={14} />
@@ -294,7 +326,7 @@ export const Header: FC<HeaderProps> = ({
           <button
             className="btn btn-warning"
             onClick={() => onStep(3)}
-            disabled={loading || !scenario}
+            disabled={loading || !scenario || scenario.status === 'completed' || scenario.status === 'failed' || scenario.status === 'cancelled'}
             title="Advance simulation by 3 steps directly to trigger roaster bearing thermal runaway"
           >
             <FastForward size={14} />

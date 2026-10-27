@@ -125,3 +125,12 @@ def get_scenario_provenance(scenario_id: str, session: Session = Depends(get_db)
         "provenance_trace": provenance_data,
     }
 
+
+@router.get("/federated-context")
+def get_federated_recovery_context(
+    disruption_type: str = Query(default="supplier_customs_delay", description="Disruption type to retrieve federated context for"),
+):
+    """Retrieves verified federated external operational data from Zetaris (TPCDS_DB, NY_TAXI) for autonomous recovery."""
+    return usl_service.fetch_federated_recovery_context(disruption_type=disruption_type)
+
+

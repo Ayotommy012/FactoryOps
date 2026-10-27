@@ -2,8 +2,10 @@
 
 from app.usl.models import (
     CanonicalCustomerOrder,
+    CanonicalExternalBufferStock,
     CanonicalMachineCondition,
     CanonicalProductionBatch,
+    CanonicalTransitEnvironmentalCondition,
     SemanticRecordKind,
     USLMappingDefinition,
     USLProvenance,
@@ -14,8 +16,10 @@ from app.usl.zetaris_federation import FederatedQueryResult, ZetarisFederationCl
 
 __all__ = [
     "CanonicalCustomerOrder",
+    "CanonicalExternalBufferStock",
     "CanonicalMachineCondition",
     "CanonicalProductionBatch",
+    "CanonicalTransitEnvironmentalCondition",
     "FederatedQueryResult",
     "NASABearingDataLoader",
     "SemanticRecordKind",

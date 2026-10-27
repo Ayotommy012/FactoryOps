@@ -56,6 +56,8 @@ class CreateScenarioRequest(BaseModel):
 
 class StepScenarioRequest(BaseModel):
     steps: int = Field(default=1, ge=1, le=100, json_schema_extra={"example": 1})
+    idempotency_key: Optional[str] = Field(default=None, json_schema_extra={"example": "step_key_123"})
+    target_step: Optional[int] = Field(default=None, json_schema_extra={"example": 4})
 
 
 class ScenarioResponse(BaseModel):
@@ -90,6 +92,34 @@ def seed_database(db: Session = Depends(get_db)):
     return res
 
 
+@router.get("", response_model=List[ScenarioResponse])
+def list_simulations(
+    status: Optional[str] = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+):
+    """Lists recent simulation scenarios ordered by creation time descending."""
+    query = db.query(SimulationScenario)
+    if status:
+        query = query.filter(SimulationScenario.status == status)
+    scenarios = query.order_by(SimulationScenario.created_at.desc()).limit(limit).all()
+    return [
+        ScenarioResponse(
+            id=s.id,
+            name=s.name,
+            disruption_type=s.disruption_type,
+            status=s.status,
+            random_seed=s.random_seed,
+            simulation_time=s.simulation_time.isoformat(),
+            current_step=s.current_step,
+            step_size_minutes=s.step_size_minutes,
+            snapshot=s.parameters.get("snapshot", {}) if s.parameters else {},
+            parameters=s.parameters or {},
+        )
+        for s in scenarios
+    ]
+
+
 @router.post("", response_model=ScenarioResponse, status_code=status.HTTP_201_CREATED)
 def create_new_simulation(
     payload: CreateScenarioRequest,
@@ -116,11 +146,18 @@ def create_new_simulation(
             simulation_time=scenario.simulation_time.isoformat(),
             current_step=scenario.current_step,
             step_size_minutes=scenario.step_size_minutes,
-            snapshot=scenario.parameters.get("snapshot", {}),
+            snapshot=scenario.parameters.get("snapshot", {}) if scenario.parameters else {},
+            parameters=scenario.parameters or {},
         )
+    except ValueError as e:
+        db.rollback()
+        err_msg = str(e)
+        if "already exists" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/{scenario_id}/step", response_model=StepResponse)
@@ -131,7 +168,13 @@ def advance_simulation_step(
 ):
     """Advances an active simulation scenario by N discrete steps."""
     try:
-        result = step_scenario(db, scenario_id, steps=payload.steps)
+        result = step_scenario(
+            session=db,
+            scenario_id=scenario_id,
+            steps=payload.steps,
+            idempotency_key=payload.idempotency_key,
+            target_step=payload.target_step,
+        )
         db.commit()
         return StepResponse(**result)
     except ValueError as e:

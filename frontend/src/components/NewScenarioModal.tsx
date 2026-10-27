@@ -23,6 +23,7 @@ export const NewScenarioModal: FC<NewScenarioModalProps> = ({
   const [randomSeed, setRandomSeed] = useState(42)
   const [stepSizeMinutes, setStepSizeMinutes] = useState(15)
   const [creating, setCreating] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Close on Escape key press
   useEffect(() => {
@@ -40,6 +41,7 @@ export const NewScenarioModal: FC<NewScenarioModalProps> = ({
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setCreating(true)
+    setError(null)
     try {
       await onCreate({
         name,
@@ -48,6 +50,9 @@ export const NewScenarioModal: FC<NewScenarioModalProps> = ({
         step_size_minutes: stepSizeMinutes,
       })
       onClose()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(msg)
     } finally {
       setCreating(false)
     }
@@ -92,6 +97,20 @@ export const NewScenarioModal: FC<NewScenarioModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          {error && (
+            <div
+              style={{
+                padding: '8px 12px',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid #ef4444',
+                borderRadius: '4px',
+                color: '#fca5a5',
+                fontSize: '0.8rem',
+              }}
+            >
+              <strong>Error:</strong> {error}
+            </div>
+          )}
           <div>
             <label style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
               Scenario Name

@@ -260,6 +260,37 @@ def test_meterless_choice_changes_the_executed_plan(db_session: Session, monkeyp
     assert "NIGHTSHIFT_ALLOW_CLOUD_JOBS=false" in decision["uncertainty_notes"]
 
 
+def test_meterless_selected_reseal_locks_out_press_then_restores_it(db_session: Session, monkeypatch):
+    """Reproduces the live run: Meterless picks the reseal; the press must produce
+    nothing while locked out, then return to 600 kg/h with the incident resolved."""
+    monkeypatch.setenv("METERLESS_API_KEY", "test-token")
+    scn = _press_scenario(db_session, "scn_reseal_live_repro")
+    reply = json.dumps({"selected_plan_id": "plan_a_hydraulic_reseal", "strategic_rationale": "Fix root cause.",
+                        "confidence_score": 0.9})
+    with patch.object(MeterlessClient, "preview_route", return_value={}), \
+         patch.object(MeterlessClient, "chat_completion", return_value=reply):
+        record = run_autonomous_recovery_lifecycle(db_session, scn, auto_advance_steps=False)
+    assert record.selected_plan_id == "plan_a_hydraulic_reseal"
+
+    scenario = db_session.get(SimulationScenario, scn)
+    batch_before = scenario.parameters["snapshot"]["batches"]["production_batch:mes:BATCH-104"]["actual_quantity_kg"]
+    step_scenario(db_session, scn, steps=1)
+    db_session.refresh(scenario)
+    snap = scenario.parameters["snapshot"]
+    assert snap["machines"]["machine:plant:PRESS-01"]["status"] == "maintenance"
+    assert snap["batches"]["production_batch:mes:BATCH-104"]["actual_quantity_kg"] == batch_before
+
+    duration = scenario.parameters["recovery"]["duration_steps"]
+    step_scenario(db_session, scn, steps=duration)
+    db_session.refresh(scenario)
+    press = scenario.parameters["snapshot"]["machines"]["machine:plant:PRESS-01"]
+    assert scenario.parameters["recovery"]["status"] == "completed"
+    assert press["status"] == "running" and press["rated_capacity_kg_h"] == 600.0
+    assert detect_and_trace_impact(db_session, scn).evidence == []
+    assert all(i["status"] == "resolved" for i in scenario.parameters["active_incidents"])
+    assert scenario.parameters["active_incidents"] == scenario.parameters["snapshot"]["active_incidents"]
+
+
 def test_rate_limited_decision_falls_back_and_still_executes(db_session: Session, monkeypatch):
     monkeypatch.setenv("METERLESS_API_KEY", "test-token")
     scn = _press_scenario(db_session, "scn_decision_429")

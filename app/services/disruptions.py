@@ -171,7 +171,8 @@ def sync_incident_severity(session: Session, scenario_id: str) -> Optional[str]:
         inc for inc in incidents
         if inc.get("status") != "resolved" and impact.disruption_type in (inc.get("type"), inc.get("disruption_type"))
     ]
-    if has_evidence and not open_match and impact.disruption_type in DISRUPTION_CATALOGUE:
+    any_record = any(impact.disruption_type in (inc.get("type"), inc.get("disruption_type")) for inc in incidents)
+    if has_evidence and not any_record and impact.disruption_type in DISRUPTION_CATALOGUE:
         defn = DISRUPTION_CATALOGUE[impact.disruption_type]
         step = snapshot.get("step", scenario.current_step)
         incidents.append({
@@ -194,6 +195,12 @@ def sync_incident_severity(session: Session, scenario_id: str) -> Optional[str]:
             if inc.get("severity") != impact.severity:
                 inc["severity"] = impact.severity
                 changed = True
+
+    # The stepping loop updates only the snapshot's incident list (e.g. marking
+    # incidents resolved on recovery completion); keep the top-level copy, which
+    # API consumers read first, identical.
+    if params.get("active_incidents") != incidents and (incidents or params.get("active_incidents")):
+        changed = True
 
     if changed:
         snapshot["active_incidents"] = incidents
